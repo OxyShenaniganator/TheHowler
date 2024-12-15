@@ -17,7 +17,7 @@ public class ModEntities {
 
     public static final RegistryObject<EntityType<TheHowlerEntity>> THE_HOWLER =
             ENTITY_TYPES.register("the_howler", () -> EntityType.Builder.of(TheHowlerEntity::new, MobCategory.MISC)
-                    .sized(2.5f, 3f).build("the_howler"));
+                    .sized(1.5f, 3f).build("the_howler"));
 
     public static void register(IEventBus eventBus) {
         ENTITY_TYPES.register(eventBus);

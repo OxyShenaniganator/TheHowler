@@ -8,10 +8,12 @@ import net.oxyoksirotl.thehowlermod.TheHowlerMod;
 import net.oxyoksirotl.thehowlermod.entity.custom.TheHowlerEntity;
 import software.bernie.geckolib.model.GeoModel;
 import software.bernie.geckolib.renderer.GeoEntityRenderer;
+import software.bernie.geckolib.renderer.layer.AutoGlowingGeoLayer;
 
 public class TheHowlerRenderer extends GeoEntityRenderer<TheHowlerEntity> {
     public TheHowlerRenderer(EntityRendererProvider.Context renderManager) {
         super(renderManager, new TheHowlerModel());
+        addRenderLayer(new AutoGlowingGeoLayer<>(this));
     }
 
     @Override

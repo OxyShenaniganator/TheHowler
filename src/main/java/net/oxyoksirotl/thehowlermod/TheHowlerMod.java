@@ -15,6 +15,7 @@ import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.oxyoksirotl.thehowlermod.entity.ModEntities;
 import net.oxyoksirotl.thehowlermod.entity.client.TheHowlerRenderer;
+import net.oxyoksirotl.thehowlermod.networking.ModNetworking;
 import org.slf4j.Logger;
 
 // The value here should match an entry in the META-INF/mods.toml file
@@ -41,6 +42,8 @@ public class TheHowlerMod
 
     private void commonSetup(final FMLCommonSetupEvent event)
     {
+
+        ModNetworking.register();
 
     }
 
