@@ -1,21 +1,23 @@
 package net.oxyoksirotl.thehowlermod.entity.custom;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.Difficulty;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
-import net.minecraft.world.entity.ai.goal.FloatGoal;
-import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
-import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
-import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
+import net.minecraft.world.entity.ai.goal.*;
+import net.minecraft.world.entity.ai.navigation.FlyingPathNavigation;
+import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
+import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.pathfinder.BlockPathTypes;
 import net.minecraft.world.phys.Vec3;
 import software.bernie.geckolib.animatable.GeoEntity;
 import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
@@ -23,6 +25,10 @@ import software.bernie.geckolib.core.animatable.instance.SingletonAnimatableInst
 import software.bernie.geckolib.core.animation.*;
 import software.bernie.geckolib.core.animation.AnimationState;
 import software.bernie.geckolib.core.object.PlayState;
+
+import javax.annotation.Nullable;
+import java.util.EnumSet;
+import java.util.List;
 
 public class TheHowlerEntity extends Monster implements GeoEntity {
 
@@ -82,7 +88,7 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
                 .add(Attributes.FOLLOW_RANGE, 80.0F);
     }
 
-    boolean isBeingStaredAt (Player player) {
+    public boolean isBeingStaredAt (Player player) {
         if (player.isCreative() || player.isSpectator()) {
             return false;
         } else {
@@ -107,11 +113,12 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
+        this.goalSelector.addGoal(1, new StalkPlayerGoal(this, 1.0F, 60, 150));
+        // this.goalSelector.addGoal(2, new ChasePlayerGoal(this, Player.class));
+        //this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 160f));
 
-        this.goalSelector.addGoal(1, new MeleeAttackGoal(this, (double) 1.0F, true));
-        this.goalSelector.addGoal(2, new LookAtPlayerGoal(this, Player.class, 160f));
 
-        this.targetSelector.addGoal(0, new NearestAttackableTargetGoal<>(this, Player.class, true, false));
+        // this.targetSelector.addGoal(0, new NearestAttackableTargetGoal<>(this, Player.class, true, false));
         // this.targetSelector.addGoal(1, new HowlerHuntTargetGoal(this, this::is));
     }
 
@@ -121,6 +128,13 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
 
         this.updateHowlerStatus();
 
+    }
+
+    @Override
+    public void checkDespawn() {
+        if (this.level().getDifficulty() == Difficulty.PEACEFUL) {
+            this.discard();
+        } else this.noActionTime = 0;
     }
 
     @Override
@@ -172,6 +186,86 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
 
     }
 
-}
+    // Custom goals
+    static class StalkPlayerGoal extends Goal {
 
-// Custom goals - Stare, Stalk, Chase, Scare, ScareChase
+        private final TheHowlerEntity mob;
+        @Nullable
+        private Player followingPlayer;
+        private final double speedModifier;
+        private final PathNavigation navigation;
+        private int timeToRecalcPath;
+        private final float stopDistance;
+        private float oldWaterCost;
+        private final float areaSize;
+
+        public StalkPlayerGoal(TheHowlerEntity pMob, double pSpeedModifier, float pStopDistance, float pAreaSize) {
+            this.mob = pMob;
+            this.speedModifier = pSpeedModifier;
+            this.navigation = pMob.getNavigation();
+            this.stopDistance = pStopDistance;
+            this.areaSize = pAreaSize;
+            this.setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
+            if (!(pMob.getNavigation() instanceof GroundPathNavigation) && !(pMob.getNavigation() instanceof FlyingPathNavigation)) {
+                throw new IllegalArgumentException("Unsupported mob type for FollowMobGoal");
+            }
+        }
+
+        @Override
+        public boolean canUse() {
+
+            List<Player> nearbyPlayerList = this.mob.level().getEntitiesOfClass(Player.class, this.mob.getBoundingBox().inflate((double) this.areaSize));
+            if(!nearbyPlayerList.isEmpty()) {
+                for (Player player : nearbyPlayerList) {
+                    if (!player.isInvisible() && !(player.isCreative() || player.isSpectator())) {
+                        this.followingPlayer = player;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return this.followingPlayer != null && !this.navigation.isDone()
+                    && this.mob.distanceToSqr(this.followingPlayer) > (double)(this.stopDistance * this.stopDistance)
+                    && this.mob.isBeingStaredAt(followingPlayer);
+        }
+
+        @Override
+        public void start() {
+            this.timeToRecalcPath = 0;
+            this.oldWaterCost = this.mob.getPathfindingMalus(BlockPathTypes.WATER);
+            this.mob.setPathfindingMalus(BlockPathTypes.WATER, 0.0F);
+        }
+
+        @Override
+        public void stop() {
+            this.followingPlayer = null;
+            this.navigation.stop();
+            this.mob.setPathfindingMalus(BlockPathTypes.WATER, this.oldWaterCost);
+        }
+
+        @Override
+        public void tick() {
+            if (this.followingPlayer != null) {
+                this.mob.getLookControl().setLookAt(this.followingPlayer, 10.0F, (float)this.mob.getMaxHeadXRot());
+                if (--this.timeToRecalcPath <= 0) {
+                    this.timeToRecalcPath = this.adjustedTickDelay(10);
+                    double xDistance = this.mob.getX() - this.followingPlayer.getX();
+                    double yDistance = this.mob.getY() - this.followingPlayer.getY();
+                    double zDistance = this.mob.getZ() - this.followingPlayer.getZ();
+                    double distanceBoxSquared = xDistance * xDistance + yDistance * yDistance + zDistance * zDistance;
+                    if (!(distanceBoxSquared <= (double)(this.stopDistance * this.stopDistance))) {
+                        this.navigation.moveTo(this.followingPlayer, this.speedModifier);
+                    } else {
+                        this.navigation.stop();
+                        }
+                    }
+            }
+        }
+    }
+
+}
