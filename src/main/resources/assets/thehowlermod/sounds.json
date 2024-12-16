@@ -1,0 +1,9 @@
+{
+  "howler_spotted": {
+    "subtitles": "sounds.thehowlermod.howler_spotted",
+    "sounds": [
+      "thehowlermod:howler_spotted_1",
+      "thehowlermod:howler_spotted_2"
+    ]
+  }
+}

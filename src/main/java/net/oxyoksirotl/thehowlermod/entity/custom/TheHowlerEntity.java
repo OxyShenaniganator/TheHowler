@@ -1,6 +1,8 @@
 package net.oxyoksirotl.thehowlermod.entity.custom;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
@@ -8,6 +10,7 @@ import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.*;
+import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.ai.navigation.FlyingPathNavigation;
 import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
 import net.minecraft.world.entity.ai.navigation.PathNavigation;
@@ -19,6 +22,9 @@ import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.pathfinder.BlockPathTypes;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.fml.common.Mod;
+import net.oxyoksirotl.thehowlermod.TheHowlerMod;
+import net.oxyoksirotl.thehowlermod.sound.ModSounds;
 import software.bernie.geckolib.animatable.GeoEntity;
 import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
 import software.bernie.geckolib.core.animatable.instance.SingletonAnimatableInstanceCache;
@@ -39,6 +45,7 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
     private boolean isChasing;
     private boolean isStaring;
     private int tickTimer;
+    private int stareTimer;
 
     public TheHowlerEntity(EntityType<? extends Monster> pEntityType, Level pLevel) {
 
@@ -113,12 +120,13 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
-        this.goalSelector.addGoal(1, new StalkPlayerGoal(this, 1.0F, 60, 150));
+        this.goalSelector.addGoal(1, new StartlePlayerGoal(this, 1.0F, 60, 150));
         // this.goalSelector.addGoal(2, new ChasePlayerGoal(this, Player.class));
-        //this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 160f));
+        this.goalSelector.addGoal(2, new StartlePlayerGoal(this, 1.0F, 0, 2));
+        this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 160f));
 
 
-        // this.targetSelector.addGoal(0, new NearestAttackableTargetGoal<>(this, Player.class, true, false));
+        this.targetSelector.addGoal(0, new NearestAttackableTargetGoal<>(this, Player.class, true, false));
         // this.targetSelector.addGoal(1, new HowlerHuntTargetGoal(this, this::is));
     }
 
@@ -184,6 +192,18 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
             this.status = isStaring ? HowlerStatus.STARING: HowlerStatus.IDLE;
         }
 
+    }
+
+    public int getStareTimer() {
+        return this.stareTimer;
+    }
+
+    public void increaseStareTimer(int increaseAmount) {
+        this.stareTimer+=increaseAmount;
+    }
+
+    public void resetStareTimer() {
+        this.stareTimer=0;
     }
 
     // Custom goals
@@ -264,6 +284,81 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
                         this.navigation.stop();
                         }
                     }
+            }
+        }
+    }
+
+    static class StartlePlayerGoal extends Goal {
+
+        private final TheHowlerEntity mob;
+        @Nullable
+        private Player startlingPlayer;
+        private final double speedModifier;
+        private final PathNavigation navigation;
+        private int timeToRecalcPath;
+        private final float stopDistance;
+        private float oldWaterCost;
+        private final float areaSize;
+
+        public StartlePlayerGoal(TheHowlerEntity pMob, double pSpeedModifier, float pStopDistance, float pAreaSize) {
+            this.mob = pMob;
+            this.speedModifier = pSpeedModifier;
+            this.navigation = pMob.getNavigation();
+            this.stopDistance = pStopDistance;
+            this.areaSize = pAreaSize;
+            this.setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
+            if (!(pMob.getNavigation() instanceof GroundPathNavigation) && !(pMob.getNavigation() instanceof FlyingPathNavigation)) {
+                throw new IllegalArgumentException("Unsupported mob type for FollowMobGoal");
+            }
+        }
+
+        @Override
+        public boolean canUse() {
+
+            List<Player> nearbyPlayerList = this.mob.level().getEntitiesOfClass(Player.class, this.mob.getBoundingBox().inflate((double) this.areaSize));
+            if(!nearbyPlayerList.isEmpty()) {
+                for (Player player : nearbyPlayerList) {
+                    if (!player.isInvisible() && !(player.isCreative() || player.isSpectator())) {
+                        this.startlingPlayer = player;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return this.startlingPlayer != null
+                    && this.mob.distanceToSqr(this.startlingPlayer) > (double)(this.stopDistance * this.stopDistance);
+        }
+
+        @Override
+        public void start() {
+            this.timeToRecalcPath = 0;
+        }
+
+        @Override
+        public void stop() {
+            this.startlingPlayer = null;
+            this.mob.setPathfindingMalus(BlockPathTypes.WATER, this.oldWaterCost);
+        }
+
+        @Override
+        public void tick() {
+            if (this.startlingPlayer != null) {
+                this.mob.getLookControl().setLookAt(this.startlingPlayer, 10.0F, (float)this.mob.getMaxHeadXRot());
+                if(this.mob.isBeingStaredAt(this.startlingPlayer)) {
+                    this.mob.increaseStareTimer(1);
+                    if (this.mob.getStareTimer() >= 160) {
+                        this.startlingPlayer.addEffect(new MobEffectInstance(MobEffects.DARKNESS, 100));
+                        this.startlingPlayer.level().playSeededSound(null, this.startlingPlayer.getX(), this.startlingPlayer.getY()
+                                , this.startlingPlayer.getZ(), ModSounds.HOWLER_SPOTTED.get(), SoundSource.AMBIENT
+                                , 1F, 1F, 0);
+                        this.mob.discard();
+                    }
+                }
             }
         }
     }
