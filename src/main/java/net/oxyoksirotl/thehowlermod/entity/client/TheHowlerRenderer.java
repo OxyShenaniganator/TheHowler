@@ -6,14 +6,18 @@ import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.resources.ResourceLocation;
 import net.oxyoksirotl.thehowlermod.TheHowlerMod;
 import net.oxyoksirotl.thehowlermod.entity.custom.TheHowlerEntity;
-import software.bernie.geckolib.model.GeoModel;
 import software.bernie.geckolib.renderer.GeoEntityRenderer;
 import software.bernie.geckolib.renderer.layer.AutoGlowingGeoLayer;
 
 public class TheHowlerRenderer extends GeoEntityRenderer<TheHowlerEntity> {
     public TheHowlerRenderer(EntityRendererProvider.Context renderManager) {
         super(renderManager, new TheHowlerModel());
-        addRenderLayer(new AutoGlowingGeoLayer<>(this));
+
+        // For some reason, this only works for some shaders.
+        //addRenderLayer(new AutoGlowingGeoLayer<>(this));
+
+        // Use custom layer instead. (Credit to @SiverDX)
+        addRenderLayer(new TheHowlerEyesLayer(this));
     }
 
     @Override
@@ -24,8 +28,6 @@ public class TheHowlerRenderer extends GeoEntityRenderer<TheHowlerEntity> {
     @Override
     public void render(TheHowlerEntity entity, float entityYaw, float partialTick, PoseStack poseStack,
                        MultiBufferSource bufferSource, int packedLight) {
-
-
 
         super.render(entity, entityYaw, partialTick, poseStack, bufferSource, packedLight);
     }
