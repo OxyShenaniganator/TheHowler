@@ -1,6 +1,10 @@
 package net.oxyoksirotl.thehowlermod.entity.custom;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializer;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
@@ -25,16 +29,43 @@ import software.bernie.geckolib.core.animation.*;
 import software.bernie.geckolib.core.animation.AnimationState;
 import software.bernie.geckolib.core.object.PlayState;
 
+import java.util.Set;
+
 public class TheHowlerEntity extends Monster implements GeoEntity {
 
     private AnimatableInstanceCache cache = new SingletonAnimatableInstanceCache(this);
 
     private HowlerStatus status;
 
-    public boolean isChasing;
-    public boolean isStaring;
+//    public boolean isChasing;
+//    public boolean isStaring;
+
+    // TODO : These two needs to be synchronized too.
     private int tickTimer;
     private int stareTimer;
+
+
+    // Synchronized data & Networking bullshits.
+    private static final EntityDataAccessor<Boolean> IS_BEING_STARED_AT = SynchedEntityData.defineId(
+            TheHowlerEntity.class, EntityDataSerializers.BOOLEAN
+    );
+    public boolean isStaring() {
+      return this.entityData.get(IS_BEING_STARED_AT);
+    };
+    public void setStaring(boolean isStaring) {
+        this.entityData.set(IS_BEING_STARED_AT, isStaring);
+    }
+    private static final EntityDataAccessor<Boolean> IS_CURRENTLY_CHASING = SynchedEntityData.defineId(
+            TheHowlerEntity.class, EntityDataSerializers.BOOLEAN
+    );
+
+    public boolean isChasing() {
+        return this.entityData.get(IS_CURRENTLY_CHASING);
+    }
+    public void setChasing(boolean isChasing) {
+        this.entityData.set(IS_CURRENTLY_CHASING, isChasing);
+    }
+
 
     public TheHowlerEntity(EntityType<? extends Monster> pEntityType, Level pLevel) {
 
@@ -55,21 +86,27 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
     }
 
 
-
     @Override
     public void readAdditionalSaveData(CompoundTag nbt) {
         super.readAdditionalSaveData(nbt);
-        this.isChasing = nbt.getBoolean("isChasing");
-        this.isStaring = nbt.getBoolean("isStaring");
+        this.setChasing(nbt.getBoolean("isChasing"));
+        this.setStaring(nbt.getBoolean("isStaring"));
         this.tickTimer = nbt.getInt("timer");
     }
 
     @Override
     public void addAdditionalSaveData(CompoundTag nbt) {
         super.addAdditionalSaveData(nbt);
-        nbt.putBoolean("isChasing", this.isChasing);
-        nbt.putBoolean("isStaring", this.isStaring);
+        nbt.putBoolean("isChasing", this.isChasing());
+        nbt.putBoolean("isStaring", this.isStaring());
         nbt.putInt("timer", this.tickTimer);
+    }
+
+    @Override
+    protected void defineSynchedData() {
+        super.defineSynchedData();
+        this.entityData.define(IS_CURRENTLY_CHASING, false);
+        this.entityData.define(IS_BEING_STARED_AT, false);
     }
 
     public static AttributeSupplier.Builder createAttributes () {
@@ -84,15 +121,10 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
 
     @Override
     protected void registerGoals() {
+
         this.goalSelector.addGoal(0, new FloatGoal(this));
-        // this.goalSelector.addGoal(1, new TheHowlerEntityGoal.StalkPlayerGoal(this, 1.0F, 60, 150));
-        // this.goalSelector.addGoal(2, new ChasePlayerGoal(this, Player.class));
-        // this.goalSelector.addGoal(2, new TheHowlerEntityGoal.StaredBehaviorGoal(this, 1.0F, 0, 2));
-        this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 160f));
+        this.goalSelector.addGoal(1, new TheHowlerObservingGoal(this, 100, 10));
 
-
-        // this.targetSelector.addGoal(0, new NearestAttackableTargetGoal<>(this, Player.class, true, false));
-        // this.targetSelector.addGoal(1, new HowlerHuntTargetGoal(this, this::is));
     }
 
     public boolean isBeingStaredAt (Player player, double distance) {
@@ -118,10 +150,6 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
 
     public boolean isMoving() {
         return !(this.xOld == this.getX() && this.yOld == this.getY() && this.zOld == this.getZ());
-    }
-
-    private boolean isBlockTransparent(BlockState blockState) {
-        return blockState.is(Tags.Blocks.GLASS) || blockState.is(Blocks.WATER);
     }
 
     @Override
@@ -157,8 +185,9 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
         String currentAnimation = "";
 
         switch (this.status) {
-            case WALKING -> currentAnimation = "animation.howler.walk";
             case CHASING -> currentAnimation = "animation.howler.chase";
+            case WALKING -> currentAnimation = "animation.howler.walk";
+            case STARING -> currentAnimation = "animation.howler.chase";
             case IDLE -> currentAnimation = "animation.howler.idle";
             default -> currentAnimation = "animation.howler.idle";
         }
@@ -169,6 +198,11 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
 
         return PlayState.CONTINUE;
 
+    }
+
+    private String staringAnimation() {
+
+        return "animation.howler.stared" + Integer.toString(this.random.nextInt(1,3));
     }
 
     @Override
@@ -189,26 +223,14 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
 
         // Check if the parameters: isMoving, isChasing
         if (this.isMoving()) {
-            this.status = isChasing ? HowlerStatus.CHASING: HowlerStatus.WALKING;
+            this.status = this.isChasing() ? HowlerStatus.CHASING: HowlerStatus.WALKING;
         } else {
-            this.status = isStaring ? HowlerStatus.STARING: HowlerStatus.IDLE;
+            this.status = this.isStaring() ? HowlerStatus.STARING: HowlerStatus.IDLE;
         }
 
     }
 
     public HowlerStatus getHowlerStatus() {
         return this.status;
-    }
-
-    public int getStareTimer() {
-        return this.stareTimer;
-    }
-
-    public void increaseStareTimer(int increaseAmount) {
-        this.stareTimer+=increaseAmount;
-    }
-
-    public void resetStareTimer() {
-        this.stareTimer=0;
     }
 }
