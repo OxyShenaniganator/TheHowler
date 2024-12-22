@@ -35,7 +35,7 @@ public class TheHowlerObservingGoal extends Goal {
     @Override
     public boolean canUse() {
 
-        if (this.mob.isStaring()) return false;
+        if (this.mob.isStaring() || this.mob.isChasing()) return false;
 
         // Update the list first.
         this.updateTrackingList();
@@ -87,7 +87,15 @@ public class TheHowlerObservingGoal extends Goal {
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
 
         if (!(this.staringPlayers.isEmpty())) {
-            if (!(this.mob.level().isClientSide)) this.mob.setStaring(true);
+
+            this.mob.setTrackingTargets(this.staringPlayers);
+
+            if (!(this.mob.level().isClientSide)) {
+
+                this.mob.setRandomAnimNum(this.mob.getRandom().nextInt(1, 3));
+                this.mob.setStaring(true);
+
+            }
         }
 
     }

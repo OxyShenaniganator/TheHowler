@@ -18,10 +18,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.common.Tags;
 import software.bernie.geckolib.animatable.GeoEntity;
 import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
 import software.bernie.geckolib.core.animatable.instance.SingletonAnimatableInstanceCache;
@@ -29,13 +26,15 @@ import software.bernie.geckolib.core.animation.*;
 import software.bernie.geckolib.core.animation.AnimationState;
 import software.bernie.geckolib.core.object.PlayState;
 
-import java.util.Set;
+import java.util.HashMap;
+
 
 public class TheHowlerEntity extends Monster implements GeoEntity {
 
     private AnimatableInstanceCache cache = new SingletonAnimatableInstanceCache(this);
 
     private HowlerStatus status;
+    private HashMap<Player, Integer> trackingTargets;
 
 //    public boolean isChasing;
 //    public boolean isStaring;
@@ -43,6 +42,7 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
     // TODO : These two needs to be synchronized too.
     private int tickTimer;
     private int stareTimer;
+    private int randomAnimationNum;
 
 
     // Synchronized data & Networking bullshits.
@@ -55,10 +55,10 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
     public void setStaring(boolean isStaring) {
         this.entityData.set(IS_BEING_STARED_AT, isStaring);
     }
+
     private static final EntityDataAccessor<Boolean> IS_CURRENTLY_CHASING = SynchedEntityData.defineId(
             TheHowlerEntity.class, EntityDataSerializers.BOOLEAN
     );
-
     public boolean isChasing() {
         return this.entityData.get(IS_CURRENTLY_CHASING);
     }
@@ -66,11 +66,29 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
         this.entityData.set(IS_CURRENTLY_CHASING, isChasing);
     }
 
+    public static final EntityDataAccessor<Boolean> IS_CURRENTLY_STALKING = SynchedEntityData.defineId(
+            TheHowlerEntity.class, EntityDataSerializers.BOOLEAN
+    );
+    public boolean isStalking() { return this.entityData.get(IS_CURRENTLY_STALKING); }
+    public void setStalking(boolean isStalking) {
+        this.entityData.set(IS_CURRENTLY_STALKING, isStalking);
+    }
+
+    private static final EntityDataAccessor<Integer> RANDOM_ANIM_NUM = SynchedEntityData.defineId(
+            TheHowlerEntity.class, EntityDataSerializers.INT
+    );
+    public int getRandomAnimNum() {
+        return this.entityData.get(RANDOM_ANIM_NUM);
+    }
+    public void setRandomAnimNum(int randomAnimationNum) {
+        this.entityData.set(RANDOM_ANIM_NUM, randomAnimationNum);
+    }
 
     public TheHowlerEntity(EntityType<? extends Monster> pEntityType, Level pLevel) {
 
         super(pEntityType, pLevel);
         this.status = HowlerStatus.IDLE;
+        this.trackingTargets = new HashMap<>();
 
         // Add ability to walk fast on water
         ItemStack enchantedBoots = new ItemStack(Items.CHAINMAIL_BOOTS);
@@ -91,6 +109,7 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
         super.readAdditionalSaveData(nbt);
         this.setChasing(nbt.getBoolean("isChasing"));
         this.setStaring(nbt.getBoolean("isStaring"));
+        this.setStalking(nbt.getBoolean("isStalking"));
         this.tickTimer = nbt.getInt("timer");
     }
 
@@ -99,6 +118,7 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
         super.addAdditionalSaveData(nbt);
         nbt.putBoolean("isChasing", this.isChasing());
         nbt.putBoolean("isStaring", this.isStaring());
+        nbt.putBoolean("isStalking", this.isStalking());
         nbt.putInt("timer", this.tickTimer);
     }
 
@@ -107,6 +127,8 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
         super.defineSynchedData();
         this.entityData.define(IS_CURRENTLY_CHASING, false);
         this.entityData.define(IS_BEING_STARED_AT, false);
+        this.entityData.define(IS_CURRENTLY_STALKING, false);
+        this.entityData.define(RANDOM_ANIM_NUM, 1);
     }
 
     public static AttributeSupplier.Builder createAttributes () {
@@ -123,7 +145,8 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
     protected void registerGoals() {
 
         this.goalSelector.addGoal(0, new FloatGoal(this));
-        this.goalSelector.addGoal(1, new TheHowlerObservingGoal(this, 100, 10));
+        this.goalSelector.addGoal(1, new TheHowlerStaringGoal(this, 100));
+        this.goalSelector.addGoal(2, new TheHowlerObservingGoal(this, 100, 10));
 
     }
 
@@ -187,7 +210,7 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
         switch (this.status) {
             case CHASING -> currentAnimation = "animation.howler.chase";
             case WALKING -> currentAnimation = "animation.howler.walk";
-            case STARING -> currentAnimation = "animation.howler.chase";
+            case STARING -> currentAnimation = this.staringAnimation();
             case IDLE -> currentAnimation = "animation.howler.idle";
             default -> currentAnimation = "animation.howler.idle";
         }
@@ -202,7 +225,7 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
 
     private String staringAnimation() {
 
-        return "animation.howler.stared" + Integer.toString(this.random.nextInt(1,3));
+        return "animation.howler.stared" + Integer.toString(this.getRandomAnimNum());
     }
 
     @Override
@@ -233,4 +256,15 @@ public class TheHowlerEntity extends Monster implements GeoEntity {
     public HowlerStatus getHowlerStatus() {
         return this.status;
     }
+
+    // Tracking target management
+
+    public HashMap<Player, Integer> getTrackingTargets() {
+        return this.trackingTargets;
+    }
+
+    public void setTrackingTargets(HashMap<Player, Integer> trackingTargets) {
+        this.trackingTargets = trackingTargets;
+    }
+
 }

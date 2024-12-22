@@ -35,8 +35,8 @@ public class TheHowlerModel extends GeoModel<TheHowlerEntity> {
         if (head != null) {
             EntityModelData entityData = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
 
-            head.setRotX(entityData.headPitch() * Mth.DEG_TO_RAD);
-            head.setRotY(entityData.netHeadYaw() * Mth.DEG_TO_RAD);
+            head.setRotX(head.getRotX() + entityData.headPitch() * Mth.DEG_TO_RAD);
+            head.setRotY(head.getRotY() + entityData.netHeadYaw() * Mth.DEG_TO_RAD);
         }
 
         super.setCustomAnimations(animatable, instanceId, animationState);
